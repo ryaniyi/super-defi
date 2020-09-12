@@ -581,7 +581,8 @@ contract SuperToken is SmartToken, Constant {
         }
         
         if(reward > 0){
-            issue(user, reward);
+            // issue(user, reward);
+            mineStakeClaim(user, reward);
              m_userStakeInfos[mid][user].block_num = block.number;
              m_markets[mid].mined = safeAdd(m_markets[mid].mined,reward);
         }
