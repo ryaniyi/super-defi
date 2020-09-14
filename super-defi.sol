@@ -622,7 +622,7 @@ contract SuperToken is SmartToken, Constant {
 
         require(safeAdd(sushi_amount, m_user_swaped[msg.sender]) <= MAX_SWAP_SUSHI_PER_USER);
 
-        uint256 reward = safeDiv(safeMul(sushi_amount,38),100);
+        uint256 reward = safeDiv(safeMul(sushi_amount,38),10);
 
         require(reward <= m_swap_supply);
 
