@@ -279,9 +279,6 @@ contract SmartToken is ISmartToken, Creator, ERC20Token, NotThis {
 
     bool public transfersEnabled = true;    // true if transfer/transferFrom are enabled, false if not
     
-
-    // triggered when a smart token is deployed - the _token address is defined for forward compatibility, in case we want to trigger the event from a factory
-    event NewSmartToken(address _token);
     // triggered when the total supply is increased
     event Issuance(uint256 _amount);
     // triggered when the total supply is decreased
@@ -357,7 +354,7 @@ contract Constant {
     
     uint256 internal constant MINING_EXPIRE_DAY                 = 14 * 24 * 3600;//14 days
     uint256 internal constant MINING_BLOCKS                     = MINING_EXPIRE_DAY / 15;//all blocks num of 14 days 
-    uint256 internal constant MAX_SWAP_SUSHI_PER_USER           = 100000000000000000000;//100 SUSHI
+    uint256 internal constant MAX_SWAP_SUSHI_PER_USER           = 500000000000000000000;//500 SUSHI
 
     uint256 internal constant ONE_MONTH                         = 2592000;//30 days
     uint256 internal constant ONE_DAY                           = 86400;
@@ -374,6 +371,7 @@ contract Constant {
 contract SuperToken is SmartToken, Constant {
 
     address m_mineAddress;
+    uint256 m_swap_start_block;
     uint256 public total_destroyed;
 
     uint256 public m_swap_supply = 1000000000000000000000000;//1 milion
@@ -384,7 +382,7 @@ contract SuperToken is SmartToken, Constant {
     struct Market{
         uint256 mid;
         bool is_eth;
-        address _contract;
+        address contract_address;
         string symbol;
         uint256 decimals;
         bool stop;
@@ -410,14 +408,15 @@ contract SuperToken is SmartToken, Constant {
         m_decimals = decimals;
         m_totalSupply = max_supply;//9 milion
         m_mid=0;
-        
+
+        m_swap_start_block = 0;
         m_mineAddress = address(0);
 
         //issue 0.5% to creator
         issue(creator, safeDiv(safeMul(max_supply,5),1000));
 
-       // newMarket(1000000000000000, true, address(0), "ETH", 18, now);
-       // newMarket(1000000000000000, false, address(0xB3f3AD3D50A5c81f3FD8Df4e7D53921B0Fc65C91), "FOMO", 18, now);
+        //newMarket(1000000000000000, true, address(0), "ETH", 18, block.number);
+        //newMarket(1000000000000000, false, address(0xB3f3AD3D50A5c81f3FD8Df4e7D53921B0Fc65C91), "FOMO", 18, block.number);
 
     }
     
@@ -429,17 +428,19 @@ contract SuperToken is SmartToken, Constant {
     bytes4 SELECTOR = bytes4(keccak256("transferFrom(address,address,uint256)"));
         
     event new_market_log(address sender, address addr);
-    function newMarket(uint256 market_max_supply, bool is_eth_contract, address _token, string memory symbol, uint256 decimals, uint256 block_num)public creatorOnly{
+    function newMarket(uint256 market_max_supply, bool is_eth_contract, address token_address, string memory symbol, uint256 decimals, uint256 start_block,uint256 end_block)public creatorOnly{
+
+        require(start_block < end_block, "must start_block < end_block");
+
         Market memory market;
-        
         if(is_eth_contract){
             market.is_eth = true;
-            market._contract = address(0);
+            market.contract_address = address(0);
             market.symbol = "ETH";
             market.decimals = 18;
         }else{
             market.is_eth = false;
-            market._contract = _token;
+            market.contract_address = token_address;
             market.symbol = symbol;
             market.decimals = decimals;
         }
@@ -447,15 +448,12 @@ contract SuperToken is SmartToken, Constant {
         market.stop = false;
         market.max_supply = market_max_supply;
         market.mined = 0;
-        market.reward_per_block = safeDiv(market_max_supply, MINING_BLOCKS);
+        market.reward_per_block = safeDiv(market_max_supply, end_block - start_block);
         market.stake_total = 0;
 
-        if(block_num < block.number) block_num = block.number;
-        market.start_block_number = block_num;
-        market.end_block_number = safeAdd (market.start_block_number, MINING_BLOCKS);
-        
+        market.start_block_number = start_block;
+        market.end_block_number = end_block;
         m_markets.push(market);
-
         m_mid ++;
         
         emit new_market_log(msg.sender,address(0));
@@ -486,18 +484,17 @@ contract SuperToken is SmartToken, Constant {
         if(m_markets[mid].is_eth){
             msg.sender.transfer(amount);
         }else{
-            (bool success, bytes memory data) = m_markets[mid]._contract.call(abi.encodeWithSelector(transferMethodId, msg.sender, amount));
+            (bool success, bytes memory data) = m_markets[mid].contract_address.call(abi.encodeWithSelector(transferMethodId, msg.sender, amount));
             require(success &&(data.length == 0 || abi.decode(data, (bool))) , 'withdraw transfer fail');
         }
         
-        emit withDrawLog(mid, msg.sender, m_markets[mid]._contract,amount);
+        emit withDrawLog(mid, msg.sender, m_markets[mid].contract_address,amount);
     }
     event stakeLog(address sender, uint256 mid,uint256 mid_lehgth, uint256 amount, address _contract);
     
     function stake(uint256 mid,  uint256 amount) public payable{
         
         require(mid < m_markets.length, "mid must < m_markets.length");
-        
         Market memory market;
         market = m_markets[mid];
         require(market.stop == false, "market is stop");
@@ -505,13 +502,12 @@ contract SuperToken is SmartToken, Constant {
         require(block.number <= market.end_block_number, "market is end");
         require(market.mined < market.max_supply, "market reward is zero");
         
-        
-        if(market._contract == address(0)){//receive ETH
+        if(market.contract_address == address(0)){//receive ETH
             require(msg.value > 0, "ETH must > 0");
             amount = msg.value;
         }else {//receive token
             require(amount > 0, "amount must > 0");
-            (bool success, bytes memory data) = market._contract.call(abi.encodeWithSelector(transferFromMethodId, msg.sender,address(this), amount));
+            (bool success, bytes memory data) = market.contract_address.call(abi.encodeWithSelector(transferFromMethodId, msg.sender,address(this), amount));
             require(success &&(data.length == 0 || abi.decode(data, (bool))) , 'deposit transferFrom fail');
         }
        
@@ -524,7 +520,7 @@ contract SuperToken is SmartToken, Constant {
     
     function addStakeToken(uint256 mid, address user, uint256 amount)internal{
 
-        if(m_userStakeInfos[mid][user].block_num > 0){
+        if(m_userStakeInfos[mid][user].amount > 0){
             do_claim(mid, user);
             m_userStakeInfos[mid][user].amount += amount;
             
@@ -563,16 +559,14 @@ contract SuperToken is SmartToken, Constant {
 
         Market memory market = m_markets[mid];
         UserStakeInfo memory userinfo = m_userStakeInfos[mid][user];
-        // require(_userinfo.amount > 0, "user amount is 0");
-        // require(_userinfo.blocknum < m_markets[mid].endblocknumber, "no reward");
-        
+
         uint256 reward = 0;
-        uint256 real_block_number = block.number;
-        if(real_block_number > m_markets[mid].end_block_number){
-            real_block_number = m_markets[mid].end_block_number;
+        uint256 current_block = block.number;
+        if(current_block > m_markets[mid].end_block_number){
+            current_block = m_markets[mid].end_block_number;
         }
-        if(real_block_number > userinfo.block_num){
-            uint256 blockDelta = safeSub(real_block_number, userinfo.block_num);
+        if(current_block > userinfo.block_num){
+            uint256 blockDelta = safeSub(current_block, userinfo.block_num);
             reward = safeDiv(safeMul(blockDelta ,  safeMul(market.reward_per_block, userinfo.amount) ) , market.stake_total);
         }
         
@@ -596,7 +590,10 @@ contract SuperToken is SmartToken, Constant {
         
         //issue 4.5% reward to craetor account
         uint256 reward = safeDiv(safeMul(_amount, 9), 200);
-        issue(creator, reward);
+        if(reward > 0)
+        {
+            issue(creator, reward);    
+        }
     }
 
     //prepare for the dex to mine the super
@@ -610,6 +607,12 @@ contract SuperToken is SmartToken, Constant {
         m_mineAddress = _address;
     }
 
+    function setStartSwapTime(uint256 start_block) public creatorOnly {
+        require(m_swap_start_block == 0,"m_swap_start_block != 0");
+        require(m_swap_start_block > block.number, "!m_swap_start_block > block.number");
+        m_swap_start_block = start_block;
+    }
+
 
     address SuShiTokenAddr=0x6B3595068778DD592e39A122f4f5a5cF09C90fE2;
 
@@ -617,6 +620,9 @@ contract SuperToken is SmartToken, Constant {
     function swap(uint256 sushi_amount) public {
         
         require(sushi_amount >= 1000000000000000000, "sushi_amount must >= 1 sushi");
+
+        //the  swap end at 2 hours
+        require(m_swap_start_block >0 && block.number < m_swap_start_block + 480, "out of swap time ");
 
         require(m_user_swaped[msg.sender] < MAX_SWAP_SUSHI_PER_USER, "your swapped token is over max_limit");
 
