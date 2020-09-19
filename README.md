@@ -2,7 +2,7 @@
 
 ## Introduction to SuperSwap
 
-SuperSwap is based on the "Constant Product Automated Market Maker" algorithm and utilizes the native token SUPER "Liquidity Mining + Automatic Buyback Destruction" economic model to automatically achieve high buyback destruction while incentivizing the high mining output of liquidity providers, making the incentive sustainable and automatically controlling the market deflation to increase the value of tokens.
+SuperSwap is based on the "Constant Product Automatic Market Maker" algorithm, using the native token SUPER to stimulate mining liquidity and setting a "machine gun pool protection shield" mechanism to increase the outflow threshold to avoid malicious smashing of the market or speculative transactions by large early LP investors. In order to protect the interests of late participants to the mining and to ensure the stability and value-added nature of the native token SUPER. The risk of speculation is also reduced, and more small miners have the same opportunities for mining. It also lowers the limit on mining, allowing more small-scale miners to have the same opportunity to mine, which is in line with the development vision of " all for one, one for all ".
 
 ## Token
 
