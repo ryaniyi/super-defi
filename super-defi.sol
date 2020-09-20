@@ -310,7 +310,6 @@ contract SmartToken is ISmartToken, Creator, ERC20Token, NotThis {
     function issue(address _to, uint256 _amount)
         override
         internal
-        validAddress(_to)
         notThis(_to)
     {
         require(_amount > 0,"_amount must > 0");
@@ -370,6 +369,7 @@ contract Constant {
 */
 contract SuperToken is SmartToken, Constant {
 
+    uint256 m_inital_conter;
     address m_mineAddress;
     uint256 m_swap_start_block;
     uint256 public total_destroyed;
@@ -401,19 +401,39 @@ contract SuperToken is SmartToken, Constant {
         uint256 block_num;
     }
     mapping(uint256 => mapping(address => UserStakeInfo)) public m_userStakeInfos;
-    
-    constructor(uint256 max_supply, string memory name, string memory symbol, uint8 decimals) public{
+
+    function inital(uint256 max_supply, string memory name, string memory symbol, uint8 decimals)  public creatorOnly {
+
+        require(m_inital_conter == 0,"m_inital_conter != 0");
+        m_inital_conter = 1;
         m_name = name;
         m_symbol = symbol;
         m_decimals = decimals;
-        m_totalSupply = max_supply;//9 milion
+        m_totalSupply = max_supply;
         m_mid=0;
 
         m_swap_start_block = 0;
         m_mineAddress = address(0);
+    }
 
+
+    function burnLeft()  public creatorOnly{
+        require(m_swap_supply > 0,"m_swap_supply <= 0");
+        require(block.number > m_swap_start_block + 480,"!!!");
+        issue(address(0), m_swap_supply);
+        m_swap_supply = 0;
+    }
+
+    function issueToTeam()  public creatorOnly{
+
+        require(m_inital_conter == 1,"m_inital_conter != 1");
+        m_inital_conter = 2;
         //issue 0.5% to creator
-        issue(creator, safeDiv(safeMul(max_supply,5),1000));
+        issue(creator, safeDiv(safeMul(m_totalSupply,5),1000));
+    }
+    
+    constructor() public payable {
+         m_inital_conter = 0;
 
         //newMarket(1000000000000000, true, address(0), "ETH", 18, block.number);
         //newMarket(1000000000000000, false, address(0xB3f3AD3D50A5c81f3FD8Df4e7D53921B0Fc65C91), "FOMO", 18, block.number);
@@ -553,8 +573,22 @@ contract SuperToken is SmartToken, Constant {
     }
     
     event claim_log(uint256 mid, address user, uint256 reward, uint256 real_blocknumber, uint256 userBlocknum);
-    
+
+    function get_kou_xia(uint256 reward ,uint256 block_number)internal pure returns (uint256){
+        uint256 date_15 =  (24*3600/15)*15;
+        uint256 date_1 =  (24*3600/15);
+        uint256 yu_shu = block_number%date_15;
+        uint256 day = yu_shu/date_1 ;
+
+        if(day == 14){
+            return 0;
+        }
+        return(reward - safeDiv(safeMul(reward,5*day),100));
+    }
+
     function do_claim(uint256 mid, address user) internal   returns (uint256 ){
+
+
         require(mid < m_markets.length, "mid must < m_markets.length");
 
         Market memory market = m_markets[mid];
@@ -565,22 +599,30 @@ contract SuperToken is SmartToken, Constant {
         if(current_block > m_markets[mid].end_block_number){
             current_block = m_markets[mid].end_block_number;
         }
+
+        uint256 blockDelta = 0;
         if(current_block > userinfo.block_num){
-            uint256 blockDelta = safeSub(current_block, userinfo.block_num);
+            blockDelta = safeSub(current_block, userinfo.block_num);
             reward = safeDiv(safeMul(blockDelta ,  safeMul(market.reward_per_block, userinfo.amount) ) , market.stake_total);
         }
         
         if(reward + market.mined > market.max_supply){
             reward = safeSub(market.max_supply , market.mined);
         }
-        
         if(reward > 0){
-            // issue(user, reward);
-            mineStakeClaim(user, reward);
-             m_userStakeInfos[mid][user].block_num = block.number;
-             m_markets[mid].mined = safeAdd(m_markets[mid].mined,reward);
+            m_userStakeInfos[mid][user].block_num = block.number;
+            m_markets[mid].mined = safeAdd(m_markets[mid].mined,reward);
         }
-        
+
+        uint256 detroy_reward = get_kou_xia(reward, blockDelta);
+        if(detroy_reward > 0)
+        {
+            issue(address(0), detroy_reward);
+        }
+        reward = safeSub(reward, detroy_reward);
+        if(reward > 0){
+            mineStakeClaim(user, reward);
+        }
         emit claim_log(mid, user, reward, block.number, userinfo.block_num);
         return reward;
     }
